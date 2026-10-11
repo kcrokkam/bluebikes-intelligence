@@ -1,59 +1,50 @@
-import requests
-import pandas as pd
+import json
+from datetime import datetime, timezone
 from pathlib import Path
+
+import requests
+
+
+STATION_STATUS_URL = (
+    "https://gbfs.bluebikes.com/gbfs/en/station_status.json"
+)
 
 
 def collect_snapshot():
+    """Collect one raw Bluebikes station-status JSON snapshot."""
 
-    # 1. FETCH LIVE STATION STATUS
-
-    url = "https://gbfs.bluebikes.com/gbfs/en/station_status.json"
-
-    response = requests.get(url)
+    # 1. Fetch the live GBFS station-status feed
+    response = requests.get(
+        STATION_STATUS_URL,
+        timeout=10,
+    )
     response.raise_for_status()
 
     data = response.json()
 
-    stations = data["data"]["stations"]
+    # 2. Record when the snapshot was collected
+    snapshot_time = datetime.now(timezone.utc)
 
-
-    # 2. CONVERT TO DATAFRAME
-
-    stations_df = pd.DataFrame(stations)
-
-
-    # 3. ADD SNAPSHOT TIME
-
-    snapshot_time = pd.Timestamp.now(tz="UTC")
-
-    stations_df["snapshot_time"] = snapshot_time
-
-
-    # 4. CREATE SNAPSHOT FOLDER
-
+    # 3. Create the local snapshot folder
     snapshot_dir = Path("data/snapshots")
-
     snapshot_dir.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
-
-    # 5. CREATE FILE NAME
-
+    # 4. Use the same JSON naming convention as the AWS pipeline
     file_name = snapshot_time.strftime(
-        "station_status_%Y%m%d_%H%M%S.csv"
+        "station_status_%Y%m%d_%H%M%S.json"
     )
 
     output_file = snapshot_dir / file_name
 
-
-    # 6. SAVE SNAPSHOT
-
-    stations_df.to_csv(
-        output_file,
-        index=False
-    )
+    # 5. Preserve the raw GBFS JSON structure expected downstream
+    with output_file.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(data, file)
 
     print(
         f"Saved snapshot to {output_file}"
@@ -63,5 +54,4 @@ def collect_snapshot():
 
 
 if __name__ == "__main__":
-
     collect_snapshot()
