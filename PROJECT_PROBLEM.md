@@ -2,20 +2,16 @@
 
 ## Business Problem
 
-Bluebikes Rebalancing Intelligence is a machine learning project designed
-to predict future bike stockout risk across Bluebikes stations in the
-Boston area.
+Bluebikes Rebalancing Intelligence predicts near-term bike stockout risk across Bluebikes stations in the Boston area.
 
-The goal is to provide the operations team with enough warning to decide
-whether a station should be rebalanced before riders encounter an empty
-station.
+The operational goal is to give the rebalancing team enough warning to prioritize stations before riders encounter an empty station.
 
-The operational decision is not simply whether a station is busy. It is:
+The decision is not simply whether a station is currently busy. It is:
 
 - Which stations are at risk of running out of bikes?
-- How soon could that happen?
 - Which stations should be prioritized for rebalancing?
-- Is intervention worth the operational cost compared with waiting?
+- How much warning can be provided before a stockout occurs?
+- Does a predictive model add operational value over a simple low-inventory rule?
 
 ## User
 
@@ -23,196 +19,163 @@ The primary user is the Bluebikes operations and rebalancing team.
 
 ## Prediction Question
 
-Given everything known about a station at the current time, what is the
-probability that the station will experience a bike stockout within the
-next 60 minutes?
+Given the information available about a station at the current time, will the station reach zero available bikes within the next 60 minutes?
 
-Example:
-
-At 7:00 AM:
-
-P(stockout between 7:00 AM and 8:00 AM) = 0.82
-
-The probability can later be translated into an operational action such
-as monitor, prioritize, or rebalance.
+The current model produces a risk score used for ranking stations. Because the logistic-regression model has not been probability calibrated, the score is not interpreted as a literal stockout probability.
 
 ## Prediction Target
 
-Initial target:
-
 `stockout_next_60min`
 
-- 1 = the station reaches zero available bikes at any point during the
-  next 60 minutes
-- 0 = the station does not reach zero available bikes during the next
-  60 minutes
+- `1` = the station currently has bikes and reaches zero available bikes at least once during the next 60 minutes
+- `0` = the station currently has bikes and remains above zero during the next 60 minutes
+- `NA` = the station is already at zero or a complete future 60-minute window is unavailable
 
-The exact definition may later be expanded to include near-stockout
-conditions such as one bike remaining.
+Stations already at zero are handled separately because the stockout has already occurred.
 
 ## Prediction Horizon
 
-Initial modeling horizon:
+Primary modeling horizon:
 
-60 minutes
+**60 minutes**
 
-Later experiments may compare:
+This is intended to provide enough lead time for an operational response while remaining close enough to current station conditions to be useful.
 
-- 30 minutes — urgent intervention
-- 60 minutes — primary operating horizon
-- 120 minutes — planning horizon
+## V1 Features
 
-## Information Available at Prediction Time
+The initial model deliberately uses a small and interpretable feature set:
 
-The model may use only information that would actually be known at the
-moment a prediction is generated.
-
-Potential features include:
-
-### Current station state
-
-- bikes available
-- docks available
-- disabled bikes
-- disabled docks
-- station operating status
-- station capacity
-
-### Recent inventory behavior
-
-Using 10-minute station snapshots:
-
-- inventory 10 minutes ago
-- inventory 20 minutes ago
-- inventory 30 minutes ago
-- inventory change over recent windows
-- recent inventory trend
-
-### Historical station behavior
-
-Using historical trip data:
-
-- typical departures by station and time
-- typical arrivals by station and time
-- historical net flow
-- weekday versus weekend behavior
-- same-time historical patterns
-- station-specific demand patterns
-
-### Context
-
-Potential future features:
-
+- current bikes available
+- previous bikes available
+- inventory change
 - hour of day
 - day of week
-- weekend indicator
-- holidays
+
+Future versions may add:
+
+- station capacity
+- availability ratio
+- 30- and 60-minute inventory trends
+- station-specific historical stockout behavior
+- historical trip demand
 - weather
-- weather forecast
+- holidays and major events
 
 ## Data Leakage Rule
 
-For a prediction made at 7:00 AM, the model may use information available
-at or before 7:00 AM.
+For a prediction generated at time `t`, model features may use only information available at or before `t`.
 
-It must not use:
+Future observations are used only to construct the training label.
 
-- inventory observations after 7:00 AM
-- trips occurring after 7:00 AM
-- future weather observations that were not known at 7:00 AM
+The model must not use:
 
-When aligning inventory snapshots to a prediction timestamp, use the most
-recent snapshot available at or before the prediction time rather than
-rounding a future observation backward.
+- future bike counts
+- future inventory movement
+- future trips
+- any other observation occurring after the prediction timestamp
 
 ## Data Available
 
 ### Historical trip data
 
-Bluebikes trip history currently includes:
+Historical Bluebikes trip data covers multiple months and includes station-level departures, arrivals, net flow, time-of-day, and weekday/weekend behavior.
 
-- station IDs
-- trip start station
-- trip end station
-- trip start time
-- trip end time
-- departures
-- arrivals
-- net flow
-- hour
-- 30-minute time slot
-- day of week
-- weekend indicator
-
-Historical data currently covers approximately June through August 2026.
+Trip data is useful for historical demand context, but it cannot reconstruct true station inventory because operator rebalancing is not visible in trip records.
 
 ### Live station inventory
 
-A cloud pipeline now collects Bluebikes GBFS station status approximately
-every 10 minutes.
+A cloud pipeline collects the Bluebikes GBFS `station_status` feed every 10 minutes:
 
-Architecture:
-
+```text
 Bluebikes GBFS
-→ AWS EventBridge Scheduler
-→ AWS Lambda
-→ Amazon S3
+      ↓
+AWS EventBridge Scheduler
+      ↓
+AWS Lambda
+      ↓
+Amazon S3
+```
 
-Each raw JSON snapshot contains station-level information including:
+Each raw JSON snapshot contains station-level fields such as:
 
-- station_id
-- num_bikes_available
-- num_docks_available
-- num_bikes_disabled
-- num_docks_disabled
-- is_installed
-- is_renting
-- is_returning
-- last_reported
+- `station_id`
+- `num_bikes_available`
+- `num_docks_available`
+- `num_bikes_disabled`
+- `num_docks_disabled`
+- `is_installed`
+- `is_renting`
+- `is_returning`
+- `last_reported`
 
-These snapshots will become the historical inventory dataset used to
-create true stockout labels.
+These snapshots are transformed into the historical inventory dataset used for feature engineering and future stockout labels.
 
 ## Evaluation
 
-Accuracy alone will not be sufficient because stockouts are expected to
-be relatively rare.
+Accuracy is not a useful primary metric because stockout-risk observations are relatively rare.
 
-Initial evaluation should focus on:
+V1 focuses on:
 
-- Recall — how many real stockouts were detected?
-- Precision — how many stockout alerts were correct?
-- Precision-recall tradeoff
-- PR-AUC
+- recall
+- precision
+- confusion matrix
+- comparison with simple low-bike rules
+- out-of-time testing rather than random splitting
 
-Eventually the model should also be evaluated using an operational cost
-framework:
+The first V1 out-of-time evaluation produced:
 
-Cost =
-missed stockouts × stockout cost
-+
-unnecessary rebalancing actions × intervention cost
+| Method | Precision | Recall |
+|---|---:|---:|
+| Bikes ≤ 1 | 15.8% | 44.7% |
+| Bikes ≤ 2 | 11.3% | 67.5% |
+| Bikes ≤ 3 | 8.7% | 78.4% |
+| Logistic Regression | 3.2% | 96.7% |
 
-## Current Project Status
+The logistic model captured most positive observations but generated too many false alerts to outperform the simple rule operationally.
+
+## V1 Status
 
 Completed:
 
-- Historical trip ingestion
-- Multi-month station flow dataset
-- Time and station feature engineering
-- Baseline forecasting experiments
-- Decision tree experiment
-- XGBoost experiment
-- Exploratory analysis of station demand and net flow
-- Identification of strong weekly station patterns
-- Identification of missing historical inventory as the main data gap
-- Local Bluebikes GBFS station-status collector
+- historical Bluebikes trip ingestion
+- exploratory station-demand analysis
+- local GBFS inventory collection
 - AWS Lambda station-status collector
+- EventBridge scheduling every 10 minutes
 - Amazon S3 raw snapshot storage
-- EventBridge Scheduler running every 10 minutes
-- First successful cloud inventory snapshots
+- inventory-history construction
+- leakage-aware 60-minute stockout target
+- model-ready dataset pipeline
+- logistic-regression baseline
+- simple low-bike rule baselines
+- out-of-time evaluation with a 60-minute boundary gap
+- separation of current stockouts from future-risk candidates
+- human-readable current station risk ranking
 
-Current phase:
+## Current Limitations
 
-Collect historical inventory while defining the stockout prediction
-dataset and modeling contract.
+V1 currently has a short live inventory history.
+
+Additional limitations include:
+
+- no station-specific historical behavior in the model
+- no capacity or availability-ratio features
+- no longer-window inventory trends
+- no weather or event context
+- risk scores are not probability calibrated
+- repeated 10-minute alerts are evaluated as individual observations rather than operational episodes
+- snapshot-gap validation can be improved
+
+## Next Phase
+
+The AWS pipeline will continue accumulating inventory history.
+
+V2 will prioritize:
+
+1. more historical inventory
+2. stronger snapshot and coverage validation
+3. station capacity and inventory-trend features
+4. station-specific historical behavior
+5. episode-level operational evaluation
+6. cost-sensitive decision thresholds
+7. more complex models only if they outperform the simple rule on genuinely future data
