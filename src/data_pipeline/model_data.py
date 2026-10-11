@@ -1,6 +1,6 @@
 import pandas as pd
 
-from build_inventory_dataset import (
+from src.data_pipeline.inventory import (
     build_inventory_dataset,
     add_inventory_features,
     add_stockout_labels,
@@ -8,7 +8,7 @@ from build_inventory_dataset import (
 
 
 def prepare_model_data(snapshot_dir):
-    """Create a small dataset ready for baseline modeling."""
+    """Prepare inventory observations for stockout modeling."""
 
     # 1. Build inventory history
     inventory_df = build_inventory_dataset(
@@ -20,28 +20,28 @@ def prepare_model_data(snapshot_dir):
         inventory_df
     )
 
-    # 3. Create the prediction target
+    # 3. Create stockout target
     inventory_df = add_stockout_labels(
         inventory_df
     )
 
+    # 4. Convert UTC time to Boston local time
     local_time = inventory_df[
-    "feed_last_updated"].dt.tz_convert("America/New_York")
+        "feed_last_updated"
+    ].dt.tz_convert("America/New_York")
 
-    # 4. Add time features
+    # 5. Add time features
     inventory_df["hour"] = local_time.dt.hour
+    inventory_df["day_of_week"] = local_time.dt.dayofweek
 
-    inventory_df["day_of_week"] = (
-        local_time.dt.dayofweek
-    )
-
-    # 5. Keep only rows with a known target
+    # 6. Keep only rows with a known target
     model_df = inventory_df[
         inventory_df["stockout_next_60min"].notna()
     ].copy()
 
-    # 6. Keep only our first simple feature set
+    # 7. Keep model features, timestamp, and target
     columns = [
+        "feed_last_updated",
         "num_bikes_available",
         "previous_bikes",
         "inventory_change",
@@ -52,12 +52,17 @@ def prepare_model_data(snapshot_dir):
 
     model_df = model_df[columns]
 
-    # 7. Remove rows missing previous inventory
-    model_df = model_df.dropna().reset_index(drop=True)
+    # 8. Remove incomplete feature rows
+    model_df = (
+        model_df
+        .dropna()
+        .reset_index(drop=True)
+    )
 
-    # 8. Convert target to normal integers
+    # 9. Convert target to integer
     model_df["stockout_next_60min"] = (
-        model_df["stockout_next_60min"].astype(int)
+        model_df["stockout_next_60min"]
+        .astype(int)
     )
 
     return model_df
@@ -70,9 +75,6 @@ def main():
 
     print("\nModel dataset shape:")
     print(model_df.shape)
-
-    print("\nColumns:")
-    print(model_df.columns.tolist())
 
     print("\nTarget counts:")
     print(
