@@ -38,6 +38,8 @@ The project also preserves an earlier live-inventory stockout experiment and AWS
 
 ## Key results
 
+![Bluebikes Intelligence results at a glance](assets/results_summary.svg)
+
 ### Forecasting
 
 The production-feasible model uses only information that can realistically be available before the forecast day: calendar features, Massachusetts/federal holidays, weather, and frozen historical station demand profiles.
