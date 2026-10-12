@@ -1,277 +1,234 @@
 # Bluebikes Intelligence
 
-**Predicting Bluebikes station stockouts 60 minutes ahead using live inventory data.**
+**Next-day station demand forecasting and operational prioritization for Boston's Bluebikes network.**
 
-Bluebikes Intelligence is an end-to-end applied ML project that collects live station inventory every 10 minutes, creates future stockout labels, evaluates prediction methods on future data, and ranks stations that may require rebalancing.
+Bluebikes Intelligence forecasts hourly bike departures and arrivals for every active station, converts those forecasts into expected net bike depletion, and produces a ranked next-day watchlist enriched with live inventory context.
 
-> **Question:** Given the current state of a station, will it run out of bikes within the next 60 minutes?
+> **Business question:** Which stations are expected to experience the greatest bike depletion tomorrow, and when should operations pay the most attention?
 
----
+The system does **not** claim that a station will stock out or that a truck must be dispatched. Trip-based net depletion is an operational prioritization signal, not a confirmed inventory outcome.
+
+![Bluebikes Intelligence results at a glance](assets/results_summary.svg)
+
+## Results
+
+The production-feasible model uses only features available before the forecast day: calendar, Massachusetts/federal holidays, weather, and frozen historical station demand profiles.
+
+| Model | Departures MAE | Departures WAPE | Arrivals MAE | Arrivals WAPE |
+|---|---:|---:|---:|---:|
+| Frozen historical profile baseline | 0.860 | 70.0% | 0.859 | 70.1% |
+| LightGBM production model | **0.828** | **67.4%** | **0.824** | **67.2%** |
+
+Across **92 unseen test days**, the predicted daily Top-10 watchlist captured:
+
+- **4.04 actual Top-10 depletion stations per day on average**
+- **40.4% average Top-10 hit rate**
+- **40.0% median Top-10 hit rate**
+- **1.7% random expected Top-10 hit rate**
+
+The ranking metric evaluates the system the way an operations team would use it: as a prioritized list, not just a forecast table.
+
+## System
+
+```text
+3 years of Bluebikes trips
+        ↓
+station-hour departures / arrivals
+        ↓
+calendar + holidays + weather
+        ↓
+historical station demand profiles
+        ↓
+LightGBM departure + arrival forecasts
+        ↓
+predicted net bike flow
+        ↓
+daily cumulative depletion ranking
+        ↓
+live bike / dock context
+        ↓
+next-day operational watchlist
+```
+
+### Data
+
+Historical forecasting data covers approximately **Sep 2023-Aug 2026**:
+
+- **13,260,534 station-hour rows**
+- **640 historical station IDs**
+- hourly departures and arrivals
+- zero-demand station-hours retained
+- hourly temperature and precipitation
+- calendar, weekend, and Massachusetts holiday features
+
+Raw and generated datasets are excluded from Git because of size.
+
+### Production feature design
+
+A research model used recent-demand lags from the prior day and prior week and achieved slightly better offline performance.
+
+Those lagged trip counts are not available with enough freshness from the public Bluebikes trip archive for a reliable next-day production run.
+
+The final model therefore uses:
+
+```text
+hour / weekday / month
+weekend / holiday
+weather
+historical station demand profile
+```
+
+New stations without station-specific history fall back to a network weekday/hour profile.
+
+This preserves nearly all of the research-model performance while keeping the deployed feature set realistic.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A[Bluebikes GBFS] --> B[EventBridge]
-    B --> C[AWS Lambda]
-    C --> D[Amazon S3]
-    D --> E[Inventory Pipeline]
-    E --> F[Stockout Target]
-    F --> G[Rule Baselines]
-    F --> H[Logistic Regression]
-    H --> I[Station Risk Ranking]
+    A[Bluebikes Trip History] --> B[Station-Hour Dataset]
+    C[Historical Weather] --> D[Feature Pipeline]
+    E[Calendar + MA Holidays] --> D
+    B --> D
+    D --> F[Historical Demand Profiles]
+    D --> G[LightGBM Departures]
+    D --> H[LightGBM Arrivals]
+    F --> G
+    F --> H
+    G --> I[Predicted Net Flow]
+    H --> I
+    I --> J[Station Depletion Ranking]
+
+    K[Tomorrow Weather Forecast] --> L[Tomorrow Features]
+    M[Live GBFS Stations] --> L
+    F --> L
+    L --> G
+    L --> H
+
+    N[Live GBFS Inventory] --> O[Final Watchlist]
+    J --> O
+
+    N --> P[AWS Lambda]
+    P --> Q[S3 Inventory History]
 ```
 
-The AWS collector runs every **10 minutes**, storing raw Bluebikes station-status snapshots in S3.
+The AWS collector stores GBFS station-status snapshots every 10 minutes using EventBridge, Lambda, and S3. That live inventory history is complementary infrastructure for future inventory-aware modeling.
 
----
+## Evaluation design
 
-## Prediction Target
-
-The target is:
+Evaluation is chronological rather than random:
 
 ```text
-stockout_next_60min
+historical profile: through Aug 31, 2025
+training:           Sep 2025-Feb 2026
+validation:         Mar-May 2026
+test:               Jun-Aug 2026
 ```
 
-For each station observation:
+Primary forecast metrics:
 
-```text
-1  = station has bikes now and reaches 0 within 60 minutes
-0  = station has bikes now and stays above 0 for 60 minutes
-NA = station is already empty or insufficient future data exists
-```
+- **MAE** — average absolute trip-count error per station-hour
+- **WAPE** — total absolute error relative to total actual demand
 
-Stations already at zero are handled separately because the stockout has already happened.
+Operational evaluation converts hourly forecasts into cumulative daily net depletion and compares the predicted Top-10 stations with the actual Top-10 stations on each unseen test day.
 
----
+## Run locally
 
-## Features
-
-V1 intentionally uses a small, interpretable feature set:
-
-```text
-num_bikes_available
-previous_bikes
-inventory_change
-hour
-day_of_week
-```
-
-Future inventory observations are used only to construct the target, not as model features.
-
----
-
-## Time-Aware Evaluation
-
-A random train/test split would leak time information because many stations share the same timestamps.
-
-Instead, the project uses an out-of-time split:
-
-```text
-Historical observations
-        ↓
-TRAIN
-
-60-minute gap
-        ↓
-
-Future observations
-        ↓
-TEST
-```
-
-This better represents the real deployment problem: train on the past and predict the future.
-
----
-
-## Baseline Results
-
-The ML model was compared with simple operational rules.
-
-| Method | Precision | Recall |
-|---|---:|---:|
-| Bikes ≤ 1 | **15.8%** | 44.7% |
-| Bikes ≤ 2 | 11.3% | 67.5% |
-| Bikes ≤ 3 | 8.7% | 78.4% |
-| Logistic Regression | 3.2% | **96.7%** |
-
-Logistic regression detected:
-
-```text
-1,023 of 1,058 positive stockout-risk observations
-```
-
-but produced many false alerts.
-
-### Key finding
-
-The model achieves very high recall, but the simple low-bike rule is substantially more precise.
-
-This means the first ML baseline has **not yet demonstrated enough operational value to replace the simpler rule**.
-
-That result is intentionally preserved rather than hidden.
-
----
-
-## Current Station Ranking
-
-The latest snapshot is split into:
-
-```text
-Already at 0 bikes
-        ↓
-Current stockouts
-
-Stations with bikes remaining
-        ↓
-Future stockout risk ranking
-```
-
-Example:
-
-| Station | Bikes | Previous | Change | Risk Score |
-|---|---:|---:|---:|---:|
-| Forest River Park | 1 | 4 | -3 | 94.1% |
-| N. Harvard St at Harvard Way | 1 | 3 | -2 | 93.2% |
-| 175 N Harvard St | 1 | 2 | -1 | 92.2% |
-
-A station falling from `4 → 1` bikes is ranked above one that remained at `1 → 1`.
-
-Risk scores are used for ranking and should **not** be interpreted as calibrated probabilities.
-
----
-
-## Project Structure
-
-```text
-bluebikes-intelligence/
-│
-├── docs/
-│   └── cloud_inventory_pipeline.md
-│
-├── infrastructure/
-│   └── lambda/
-│       └── collect_station_status/
-│
-├── notebooks/
-│   └── 01_exploration_scratch.py
-│
-├── src/
-│   ├── ingestion/
-│   ├── data_pipeline/
-│   │   ├── inventory.py
-│   │   └── model_data.py
-│   └── models/
-│       ├── logistic_baseline.py
-│       ├── rule_baseline.py
-│       └── risk_ranking.py
-│
-├── PROJECT_PROBLEM.md
-├── requirements.txt
-└── README.md
-```
-
-Raw and processed datasets are excluded from Git.
-
----
-
-## Run Locally
+Install dependencies:
 
 ```bash
-git clone https://github.com/kcrokkam/bluebikes-intelligence.git
-cd bluebikes-intelligence
-
-python -m venv .venv
-source .venv/bin/activate
-
 pip install -r requirements.txt
 ```
 
-The modeling pipeline expects Bluebikes station-status JSON snapshots under:
-
-```text
-data/snapshots/
-```
-
-Then run:
+Build the historical dataset and features:
 
 ```bash
-python -m src.data_pipeline.model_data
-python -m src.models.logistic_baseline
-python -m src.models.rule_baseline
-python -m src.models.risk_ranking
+python src/ingestion/download_trips.py
+python -m src.forecasting.build_hourly_dataset
+python -m src.forecasting.download_weather
+python -m src.forecasting.build_features
+python -m src.forecasting.build_demand_profile
 ```
 
-The latest ranking is written to:
+Evaluate the production-feasible model:
+
+```bash
+python -m src.forecasting.production_model
+```
+
+Generate tomorrow's forecast and watchlist:
+
+```bash
+python -m src.forecasting.run_tomorrow
+```
+
+That command:
+
+1. downloads tomorrow's Boston weather forecast,
+2. maps active GBFS stations to historical station IDs,
+3. predicts hourly departures and arrivals,
+4. ranks stations by expected cumulative depletion,
+5. attaches current live bike and dock inventory.
+
+Generated files are written to `data/processed/`.
+
+## Repository structure
 
 ```text
-data/processed/latest_station_risk.csv
+bluebikes-intelligence/
+├── README.md
+├── PROJECT_PROBLEM.md
+├── requirements.txt
+├── assets/
+│   └── results_summary.svg
+├── docs/
+│   ├── cloud_inventory_pipeline.md
+│   ├── modeling_decisions.md
+│   └── technical_walkthrough.md
+├── infrastructure/
+│   └── lambda/
+└── src/
+    ├── ingestion/
+    ├── data_pipeline/
+    ├── forecasting/
+    └── models/
 ```
 
----
+The main next-day workflow lives in `src/forecasting/`. Earlier stockout-risk experiments and the live inventory collector are preserved as complementary work rather than hidden.
 
-## Current Limitations
+## Important boundaries
 
-V1 currently has a short live inventory history.
+- Predicted trip net flow is **not** confirmed inventory change.
+- Operator rebalancing is not visible in customer trip history.
+- Current live inventory is context, not tomorrow morning's starting inventory.
+- Historical backtests use observed weather; the live workflow uses forecast weather.
+- The watchlist prioritizes monitoring; it does not optimize truck routing.
+- Random ranking is a sanity-check comparator, not a substitute for operational baseline analysis.
 
-Other limitations include:
+## Documentation
 
-- no station-specific historical behavior yet
-- no capacity or availability-ratio features
-- no longer-window inventory trends
-- no weather or event context
-- risk scores are not probability calibrated
-- repeated 10-minute alerts are evaluated as individual rows rather than operational episodes
-- snapshot-gap validation can be improved
+For deeper technical detail:
 
----
+- `PROJECT_PROBLEM.md` — business problem, target, evaluation, and V1 scope
+- `docs/modeling_decisions.md` — leakage boundaries, lag-feature decision, cold starts, metrics, and limitations
+- `docs/technical_walkthrough.md` — compact technical explanation and interview-defense guide
+- `docs/cloud_inventory_pipeline.md` — AWS live inventory collection architecture
 
-## Next Steps
+## Tech stack
 
-The AWS pipeline will continue collecting data before additional model complexity is introduced.
+**Python · Pandas · LightGBM · scikit-learn · Open-Meteo · Bluebikes GBFS · AWS Lambda · EventBridge · S3**
 
-V2 will focus on:
+## Next steps
 
-```text
-More historical inventory
-        ↓
-Better station and trend features
-        ↓
-Stronger temporal validation
-        ↓
-Comparison against simple rules
-        ↓
-More complex models only if justified
-```
+High-value V2 extensions include:
 
-Potential additions include station capacity, inventory trends, historical trip demand, weather, episode-level evaluation, probability calibration, and gradient-boosted trees.
+- archived forecast-weather backtesting
+- special-event and station-location features
+- stronger operational ranking baselines
+- scheduled model refresh as new trip archives arrive
+- drift and forecast-quality monitoring
+- inventory-aware forecasting once sufficient S3 history accumulates
 
 ---
 
-## Tech Stack
-
-**Python:** pandas, scikit-learn  
-**Cloud:** AWS Lambda, EventBridge, S3  
-**Data:** Bluebikes GBFS + historical trip data  
-**Engineering:** Git, GitHub, GitHub Codespaces
-
----
-
-## Takeaway
-
-Bluebikes Intelligence demonstrates an end-to-end applied ML workflow:
-
-```text
-Live data
-→ cloud ingestion
-→ time-series dataset
-→ future target
-→ leakage-aware evaluation
-→ baseline comparison
-→ operational ranking
-```
-
-The most important V1 result is not simply the model's recall.
-
-It is that the project tests whether ML actually adds value over a simple operational rule and uses that evidence to determine what should be built next.
+**Core takeaway:** the project moves beyond model training into a realistic decision-support system by combining time-aware evaluation, deployable features, next-day scoring, operational ranking, and live system context.

@@ -5,11 +5,12 @@ from zipfile import ZipFile
 
 # 1. MONTHS WE WANT TO DOWNLOAD
 
-months = [
-    "202606",
-    "202607",
-    "202608"
-]
+months = (
+    [f"2023{month:02d}" for month in range(9, 13)]
+    + [f"2024{month:02d}" for month in range(1, 13)]
+    + [f"2025{month:02d}" for month in range(1, 13)]
+    + [f"2026{month:02d}" for month in range(1, 9)]
+)
 
 
 # 2. LOCATION FOR RAW DATA
@@ -37,6 +38,10 @@ for month in months:
         print(f"Downloading {month}...")
 
         response = requests.get(url)
+
+        if response.status_code == 404:
+            print(f"{month} is not available — skipping.")
+            continue
 
         response.raise_for_status()
 
