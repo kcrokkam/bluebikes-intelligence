@@ -1,32 +1,15 @@
 import gc
 
 import pandas as pd
-
-from lightgbm import (
-    LGBMRegressor,
-    early_stopping,
-    log_evaluation,
-)
+from lightgbm import LGBMRegressor, early_stopping, log_evaluation
 
 
 DATA_FILE = "data/processed/station_hour_features.csv"
 
-
-# --------------------------------------------------
-# 1. CHRONOLOGICAL TRAIN / VALIDATION / TEST PERIODS
-# --------------------------------------------------
-
 TRAIN_END = "2026-02-28 23:00:00"
-
 VALIDATION_START = "2026-03-01 00:00:00"
 VALIDATION_END = "2026-05-31 23:00:00"
-
 TEST_START = "2026-06-01 00:00:00"
-
-
-# --------------------------------------------------
-# 2. FEATURES SHARED BY BOTH MODELS
-# --------------------------------------------------
 
 COMMON_FEATURES = [
     "station_id",
@@ -40,123 +23,59 @@ COMMON_FEATURES = [
 ]
 
 
-# --------------------------------------------------
-# 3. MAE + WAPE
-# --------------------------------------------------
-
 def calculate_metrics(actual, predicted):
-    """Calculate MAE and WAPE."""
+    """Return MAE and WAPE."""
 
-    absolute_error = (
-        actual - predicted
-    ).abs()
+    absolute_error = (actual - predicted).abs()
 
     mae = absolute_error.mean()
-
-    wape = (
-        absolute_error.sum()
-        / actual.sum()
-    )
+    wape = absolute_error.sum() / actual.sum()
 
     return mae, wape
 
 
-# --------------------------------------------------
-# 4. BUSY VS LOW-VOLUME STATION EVALUATION
-# --------------------------------------------------
-
 def evaluate_station_groups(
     station_average,
-    test_station_ids,
+    station_ids,
     actual,
     predicted,
 ):
-    """
-    Compare performance on low-volume and busy stations.
+    """Compare test performance for quiet and busy stations."""
 
-    Low-volume = bottom 25% of stations by training demand.
-    Busy       = top 25% of stations by training demand.
-    """
+    low_threshold = station_average.quantile(0.25)
+    high_threshold = station_average.quantile(0.75)
 
-    low_threshold = station_average.quantile(
-        0.25
-    )
+    test_average = station_ids.map(station_average)
 
-    high_threshold = station_average.quantile(
-        0.75
-    )
-
-    test_station_average = (
-        test_station_ids
-        .map(station_average)
-    )
-
-    low_mask = (
-        test_station_average
-        <= low_threshold
-    )
-
-    busy_mask = (
-        test_station_average
-        >= high_threshold
-    )
+    groups = {
+        "LOW VOLUME": test_average <= low_threshold,
+        "BUSY": test_average >= high_threshold,
+    }
 
     print("\nSTATION VOLUME COMPARISON")
 
-    for name, mask in [
-        ("LOW VOLUME", low_mask),
-        ("BUSY", busy_mask),
-    ]:
-
-        group_actual = actual[mask]
-        group_predicted = predicted[mask]
-
+    for name, mask in groups.items():
         mae, wape = calculate_metrics(
-            group_actual,
-            group_predicted,
+            actual[mask],
+            predicted[mask],
         )
 
         print(f"\n{name}")
-        print(
-            f"Rows: {len(group_actual):,}"
-        )
-        print(
-            f"MAE: {mae:.3f}"
-        )
-        print(
-            f"WAPE: {wape:.3f}"
-        )
+        print(f"Rows: {mask.sum():,}")
+        print(f"MAE: {mae:.3f}")
+        print(f"WAPE: {wape:.3f}")
 
-
-# --------------------------------------------------
-# 5. TRAIN + EVALUATE ONE MODEL
-# --------------------------------------------------
 
 def run_model(target):
-    """
-    Train either the departures model
-    or the arrivals model.
-    """
+    """Train and evaluate one research model with recent-demand lags."""
 
-    # Use the matching lag features
-    if target == "departures":
-
-        lag_features = [
-            "departures_lag_24h",
-            "departures_lag_168h",
-        ]
-
-    else:
-
-        lag_features = [
-            "arrivals_lag_24h",
-            "arrivals_lag_168h",
-        ]
-
-    features = (
-        COMMON_FEATURES
-        + lag_features
+    lag_features = (
+        ["departures_lag_24h", "departures_lag_168h"]
+        if target == "departures"
+        else ["arrivals_lag_24h", "arrivals_lag_168h"]
     )
+
+    features = COMMON_FEATURES + lag_features
 
     columns = [
         "datetime",
@@ -164,13 +83,7 @@ def run_model(target):
         *features,
     ]
 
-    # --------------------------------------------------
-    # LOAD ONLY THE DATA NEEDED FOR THIS MODEL
-    # --------------------------------------------------
-
-    print(
-        f"\nLoading {target} data..."
-    )
+    print(f"\nLoading {target} data...")
 
     df = pd.read_csv(
         DATA_FILE,
@@ -191,92 +104,32 @@ def run_model(target):
         },
     )
 
-    # --------------------------------------------------
-    # CREATE TIME SPLITS
-    # --------------------------------------------------
-
-    train_mask = (
-        df["datetime"]
-        <= TRAIN_END
-    )
+    train_mask = df["datetime"] <= TRAIN_END
 
     validation_mask = (
         (df["datetime"] >= VALIDATION_START)
         & (df["datetime"] <= VALIDATION_END)
     )
 
-    test_mask = (
-        df["datetime"]
-        >= TEST_START
-    )
+    test_mask = df["datetime"] >= TEST_START
 
-    print(
-        f"Train rows: "
-        f"{train_mask.sum():,}"
-    )
-
-    print(
-        f"Validation rows: "
-        f"{validation_mask.sum():,}"
-    )
-
-    print(
-        f"Test rows: "
-        f"{test_mask.sum():,}"
-    )
-
-    # --------------------------------------------------
-    # CALCULATE TRAINING DEMAND BY STATION
-    #
-    # We do this BEFORE deleting training data.
-    # This lets us later identify busy and quiet stations.
-    # --------------------------------------------------
+    print(f"Train rows: {train_mask.sum():,}")
+    print(f"Validation rows: {validation_mask.sum():,}")
+    print(f"Test rows: {test_mask.sum():,}")
 
     station_average = (
-        df.loc[
-            train_mask,
-            ["station_id", target],
-        ]
-        .groupby(
-            "station_id",
-            observed=True,
-        )[target]
+        df.loc[train_mask, ["station_id", target]]
+        .groupby("station_id", observed=True)[target]
         .mean()
     )
 
-    # Convert station IDs to strings
-    # so mapping is simple later.
-    station_average.index = (
-        station_average.index.astype(str)
-    )
+    station_average.index = station_average.index.astype(str)
 
-    # --------------------------------------------------
-    # TRAINING DATA
-    # --------------------------------------------------
+    X_train = df.loc[train_mask, features]
+    y_train = df.loc[train_mask, target]
 
-    X_train = df.loc[
-        train_mask,
-        features,
-    ]
-
-    y_train = df.loc[
-        train_mask,
-        target,
-    ]
-
-    X_validation = df.loc[
-        validation_mask,
-        features,
-    ]
-
-    y_validation = df.loc[
-        validation_mask,
-        target,
-    ]
-
-    # --------------------------------------------------
-    # LIGHTGBM MODEL
-    # --------------------------------------------------
+    X_validation = df.loc[validation_mask, features]
+    y_validation = df.loc[validation_mask, target]
 
     model = LGBMRegressor(
         objective="regression_l1",
@@ -288,9 +141,7 @@ def run_model(target):
         verbosity=-1,
     )
 
-    print(
-        f"\nTraining {target} model..."
-    )
+    print(f"\nTraining {target} model...")
 
     model.fit(
         X_train,
@@ -304,62 +155,22 @@ def run_model(target):
         ],
     )
 
-    # --------------------------------------------------
-    # VALIDATION PERFORMANCE
-    # --------------------------------------------------
+    validation_predictions = pd.Series(
+        model.predict(X_validation)
+    ).clip(lower=0)
 
-    validation_predictions = (
-        model.predict(
-            X_validation
-        )
+    validation_actual = y_validation.reset_index(drop=True)
+
+    validation_mae, validation_wape = calculate_metrics(
+        validation_actual,
+        validation_predictions,
     )
 
-    validation_predictions = (
-        pd.Series(
-            validation_predictions
-        )
-        .clip(lower=0)
-    )
-
-    validation_actual = (
-        y_validation
-        .reset_index(drop=True)
-    )
-
-    validation_mae, validation_wape = (
-        calculate_metrics(
-            validation_actual,
-            validation_predictions,
-        )
-    )
-
-    # --------------------------------------------------
-    # FREE TRAINING MEMORY BEFORE TESTING
-    # --------------------------------------------------
-
-    del X_train
-    del y_train
-    del X_validation
-    del y_validation
-
+    del X_train, y_train, X_validation, y_validation
     gc.collect()
 
-    # --------------------------------------------------
-    # TEST DATA
-    # --------------------------------------------------
-
-    X_test = df.loc[
-        test_mask,
-        features,
-    ]
-
-    y_test = (
-        df.loc[
-            test_mask,
-            target,
-        ]
-        .reset_index(drop=True)
-    )
+    X_test = df.loc[test_mask, features]
+    y_test = df.loc[test_mask, target].reset_index(drop=True)
 
     test_station_ids = (
         X_test["station_id"]
@@ -367,21 +178,13 @@ def run_model(target):
         .reset_index(drop=True)
     )
 
-    # --------------------------------------------------
-    # TEST PREDICTIONS
-    # --------------------------------------------------
+    test_predictions = pd.Series(
+        model.predict(X_test)
+    ).clip(lower=0)
 
-    test_predictions = (
-        model.predict(
-            X_test
-        )
-    )
-
-    test_predictions = (
-        pd.Series(
-            test_predictions
-        )
-        .clip(lower=0)
+    test_mae, test_wape = calculate_metrics(
+        y_test,
+        test_predictions,
     )
 
     output = df.loc[
@@ -389,62 +192,24 @@ def run_model(target):
         ["station_id", "datetime", target],
     ].copy()
 
-    output[f"predicted_{target}"] = (
-        test_predictions.values
-    )
+    output[f"predicted_{target}"] = test_predictions.values
 
     output.to_csv(
         f"data/processed/test_{target}_predictions.csv",
         index=False,
     )
 
-    test_mae, test_wape = (
-        calculate_metrics(
-            y_test,
-            test_predictions,
-        )
-    )
-
-    # --------------------------------------------------
-    # MAIN RESULTS
-    # --------------------------------------------------
-
-    print(
-        f"\n{target.upper()}"
-    )
+    print(f"\n{target.upper()}")
 
     print("\nVALIDATION")
-
-    print(
-        f"MAE: "
-        f"{validation_mae:.3f}"
-    )
-
-    print(
-        f"WAPE: "
-        f"{validation_wape:.3f}"
-    )
+    print(f"MAE: {validation_mae:.3f}")
+    print(f"WAPE: {validation_wape:.3f}")
 
     print("\nTEST")
+    print(f"MAE: {test_mae:.3f}")
+    print(f"WAPE: {test_wape:.3f}")
 
-    print(
-        f"MAE: "
-        f"{test_mae:.3f}"
-    )
-
-    print(
-        f"WAPE: "
-        f"{test_wape:.3f}"
-    )
-
-    print(
-        f"\nBest iteration: "
-        f"{model.best_iteration_}"
-    )
-
-    # --------------------------------------------------
-    # BUSY VS LOW-VOLUME STATIONS
-    # --------------------------------------------------
+    print(f"\nBest iteration: {model.best_iteration_}")
 
     evaluate_station_groups(
         station_average,
@@ -453,34 +218,13 @@ def run_model(target):
         test_predictions,
     )
 
-    # --------------------------------------------------
-    # CLEAN MEMORY BEFORE NEXT MODEL
-    # --------------------------------------------------
-
-    del df
-    del X_test
-    del y_test
-    del test_predictions
-    del test_station_ids
-    del station_average
-    del model
-
+    del df, X_test, y_test, test_predictions, model
     gc.collect()
 
 
-# --------------------------------------------------
-# 6. RUN DEPARTURES, THEN ARRIVALS
-# --------------------------------------------------
-
 def main():
-
-    run_model(
-        "departures"
-    )
-
-    run_model(
-        "arrivals"
-    )
+    run_model("departures")
+    run_model("arrivals")
 
 
 if __name__ == "__main__":
