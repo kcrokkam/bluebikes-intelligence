@@ -300,6 +300,14 @@ python -m src.forecasting.production_model
 
 ### Generate tomorrow's watchlist
 
+Run the complete next-day workflow with one command:
+
+```bash
+python -m src.forecasting.run_tomorrow
+```
+
+Or run the four stages individually:
+
 ```bash
 python -m src.forecasting.download_tomorrow_weather
 python -m src.forecasting.build_tomorrow_features
@@ -325,7 +333,7 @@ The project deliberately makes several conservative choices:
 - treats net depletion as a prioritization signal, not a confirmed stockout
 - preserves live inventory as operational context rather than mixing it into customer-trip demand
 
-See `docs/modeling_decisions.md` for details.
+See `docs/modeling_decisions.md` for details and `docs/technical_walkthrough.md` for a compact technical explanation of the system.
 
 ---
 
