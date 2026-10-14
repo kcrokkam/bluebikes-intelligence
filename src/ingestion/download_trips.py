@@ -16,6 +16,7 @@ months = (
 # 2. LOCATION FOR RAW DATA
 
 data_dir = Path("data/raw")
+data_dir.mkdir(parents=True, exist_ok=True)
 
 
 # 3. DOWNLOAD AND EXTRACT EACH MONTH
