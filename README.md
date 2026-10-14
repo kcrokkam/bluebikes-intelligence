@@ -21,14 +21,21 @@ The production-feasible model uses only features available before the forecast d
 
 The table above reports forecast accuracy for the **production-feasible model** (calendar, weather, and frozen historical demand profiles).
 
-Separately, across **92 unseen test days**, the **offline research model with previous-day and previous-week demand lags** produced this Top-10 watchlist evaluation:
+### Top-10 station ranking
 
-- **4.04 actual Top-10 depletion stations per day on average**
-- **40.4% average Top-10 hit rate**
-- **40.0% median Top-10 hit rate**
-- **1.7% random expected Top-10 hit rate**
+Across **92 out-of-time test days (June–August 2026)**, the **production-feasible LightGBM model** ranked stations by predicted maximum cumulative trip net depletion:
 
-The Top-10 figures above belong to the **research model**, not the production-feasible model. The production model's Top-10 ranking performance has **not been separately evaluated** in the repository. The ranking metric evaluates a prioritized list rather than just a forecast table.
+| Ranking method | Mean Top-10 hit rate | Actual Top-10 stations captured/day | Median Top-10 hit rate |
+|---|---:|---:|---:|
+| **Production-feasible LightGBM** | **40.2%** | **4.02** | 40.0% |
+| Frozen historical profile | 39.0% | 3.90 | 40.0% |
+| Offline research model (lag features) | 40.4% | 4.04 | 40.0% |
+
+Random-selection expected hit rate for the production evaluation was **1.7%**. The production model's mean ranking hit rate was **1.2 percentage points higher** than the frozen-profile ranking baseline (approximately 0.12 more Top-10 stations captured per day). This is a **modest observed difference**; no statistical significance or operational cost benefit is claimed.
+
+The research-model row is reported separately because it uses previous-day and previous-week trip demand features that cannot be reliably supplied in the next-day operational workflow. Backtests use **observed historical weather**, not archived next-day weather forecasts.
+
+The ranking metric evaluates a prioritized list rather than just a forecast table.
 
 ## Example Output
 
@@ -139,7 +146,7 @@ Primary forecast metrics:
 - **MAE** — average absolute trip-count error per station-hour
 - **WAPE** — total absolute error relative to total actual demand
 
-Operational evaluation converts hourly forecasts into cumulative daily net depletion and compares the predicted Top-10 stations with the actual Top-10 stations on each unseen test day. The reported Top-10 result is calculated from **research-model predictions with lagged demand features**, not from `production_model.py`.
+Operational evaluation converts hourly forecasts into cumulative daily net depletion and compares the predicted Top-10 stations with the actual Top-10 stations on each unseen test day. **Production and frozen-profile results** come from `production_model.py` and `evaluate_production_ranking.py`; the **research result** comes from separate lag-feature research predictions.
 
 ## Run locally
 
@@ -171,7 +178,7 @@ Compare the production-feasible model's **Top-10 ranking** with the frozen histo
 python -m src.forecasting.evaluate_production_ranking
 ```
 
-The production-model command writes `production_test_departures_predictions.csv` and `production_test_arrivals_predictions.csv`; the evaluator writes per-day scores to `production_ranking_daily_results.csv` under `data/processed/`. No production ranking result is reported in this README until it is rerun and verified on the historical data. This evaluation does not overwrite the research-model prediction files.
+The production-model command writes `production_test_departures_predictions.csv` and `production_test_arrivals_predictions.csv`; the evaluator writes per-day scores to `production_ranking_daily_results.csv` under `data/processed/`. The production ranking figures above are from an October 14, 2026 run on the historical feature data (92 test days); the underlying datasets and daily evaluation outputs are excluded from Git. This evaluation does not overwrite the research-model prediction files.
 
 Separately, reproduce the **offline research-model Top-10 ranking evaluation** (requires the full historical feature dataset):
 
