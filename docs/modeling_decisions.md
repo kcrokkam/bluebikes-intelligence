@@ -129,9 +129,9 @@ The ranking question is more useful:
 
 > If operations can focus on 10 stations, how many of the stations that actually experience the strongest depletion did the model surface?
 
-Across 92 unseen test days, the **offline research model** (with previous-day and previous-week demand lags) was reported to identify 4.04 of the actual Top-10 stations per day on average (40.4% hit rate). These rankings come from the predictions saved by `src/forecasting/gradient_boosting.py` and evaluated by `build_watchlist.py`, `rank_stations.py`, and `evaluate_watchlist.py`.
+In a 92-day out-of-time test, the **production-feasible LightGBM model** identified **4.02 of the actual Top-10 stations per day** (40.2% mean hit rate), versus **3.90 stations/day** (39.0%) for the **frozen historical-profile ranking**. Both were evaluated using identical test days and a common maximum cumulative net-depletion definition in `src/forecasting/evaluate_production_ranking.py`. The mean difference of **1.2 percentage points** is modest and has not been shown statistically significant.
 
-The **production-feasible model** in `production_model.py` is separately evaluated on forecast MAE and WAPE; its Top-10 ranking performance has **not been established** by this evaluation. The research-model ranking figure should not be presented as a production-model result.
+The **offline research model**, with previous-day and previous-week demand lags, achieved **4.04 stations/day** (40.4%) in a separate ranking evaluation using `src/forecasting/gradient_boosting.py`, `build_watchlist.py`, `rank_stations.py`, and `evaluate_watchlist.py`. Research lag features are not available reliably for next-day production use. Historical ranking backtests use observed rather than forecast weather.
 
 ## Why isn't predicted depletion a stockout prediction?
 
