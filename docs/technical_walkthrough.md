@@ -4,7 +4,7 @@ This note explains the project in a way that is useful for technical review and 
 
 ## 30-second summary
 
-Bluebikes Intelligence forecasts hourly bike departures and arrivals for every active Bluebikes station one day ahead. It uses three years of trip history, calendar features, Massachusetts holidays, weather, and frozen station-level demand profiles. The forecasts are converted into expected cumulative net bike depletion and ranked into a daily watchlist. Live GBFS bike counts are added as operational context. The production-feasible LightGBM model beats a frozen historical-profile baseline, and the Top-10 watchlist captures 40.4% of the actual daily Top-10 depletion stations across 92 unseen test days.
+Bluebikes Intelligence forecasts hourly bike departures and arrivals for every active Bluebikes station one day ahead. It uses three years of trip history, calendar features, Massachusetts holidays, weather, and frozen station-level demand profiles. The forecasts are converted into expected cumulative net bike depletion and ranked into a daily watchlist. Live GBFS bike counts are added as operational context. The production-feasible LightGBM model beats a frozen historical-profile baseline on hourly forecast MAE and WAPE. **Separately**, an offline research model using previous-day and previous-week demand lags produced a **40.4% Top-10 hit rate** across 92 test days. That research-model result must not be presented as the production model's ranking score. The production model and frozen-profile ranking can be compared with `python -m src.forecasting.evaluate_production_ranking` after running `production_model.py` on historical data.
 
 ## Problem framing
 
@@ -142,12 +142,14 @@ For every test day, the system compares:
 - predicted Top-10 depletion stations
 - actual Top-10 trip-net-depletion stations
 
-Across 92 unseen days:
+**Offline research model with lagged-demand features**, across 92 unseen days (not the production-model ranking):
 
 - average overlap: 4.04 stations
 - average hit rate: 40.4%
 - median hit rate: 40.0%
 - random expectation: 1.7%
+
+To establish the **production-feasible** model's ranking performance against the frozen-profile ranking baseline, run `python -m src.forecasting.production_model` and then `python -m src.forecasting.evaluate_production_ranking` on the full historical dataset. Do not quote a production Top-10 score until that evaluation has been run.
 
 ## Live inventory
 
@@ -175,15 +177,13 @@ That result motivated a better feature design rather than being hidden.
 
 Because a feature that cannot be produced reliably at prediction time is not deployable.
 
-### Why does a 40.4% Top-10 hit rate matter?
+### What does the research model's 40.4% Top-10 hit rate mean?
 
-It measures the actual decision-support task: whether the model points operations toward stations that later experience the strongest depletion.
+It measures how often the **offline lag-feature research model** identifies stations with the strongest realized customer-trip depletion. It does **not** establish the ranking accuracy of the production-feasible model; that requires its separate evaluation against the frozen-profile baseline.
 
 ### Why is random not the only baseline?
 
-Random selection shows the ranking contains signal, but the forecasting model is also compared against a strong historical-profile baseline.
-
-A future improvement would compare ranking quality against additional operational heuristics.
+Random selection is only a sanity check. Forecast accuracy is compared with the frozen historical-profile baseline, and `evaluate_production_ranking.py` provides a like-for-like **ranking** comparison between the production model and that same profile baseline. Results must be run on real historical data before claiming an improvement.
 
 ### What is the biggest limitation?
 
