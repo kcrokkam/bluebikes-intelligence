@@ -1,4 +1,5 @@
 import gc
+from pathlib import Path
 
 import pandas as pd
 from lightgbm import LGBMRegressor
@@ -168,6 +169,17 @@ def run_model(target, train, validation, test):
     print(f"Validation WAPE: {validation_wape:.3f}")
     print(f"Test MAE: {test_mae:.3f}")
     print(f"Test WAPE: {test_wape:.3f}")
+
+    # Keep production and frozen-profile predictions separate from the
+    # offline lag-feature research model's test prediction files.
+    output = test[["station_id", "datetime", target]].reset_index(drop=True).copy()
+    output[f"predicted_{target}"] = test_predictions.to_numpy()
+    output[f"baseline_{target}"] = baseline_predictions.to_numpy()
+
+    output_path = Path(f"data/processed/production_test_{target}_predictions.csv")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output.to_csv(output_path, index=False)
+    print(f"Saved ranking predictions to: {output_path}")
 
     del model
     gc.collect()
