@@ -136,9 +136,9 @@ Production-feasible test results:
 
 ## Ranking validation
 
-The station watchlist is validated against actual cumulative trip net outflow during the unseen test period.
+The **offline research-model** station watchlist (with yesterday/last-week demand lags) is compared with actual cumulative trip net outflow during the unseen test period. **These numbers do not measure the production-feasible model's ranking accuracy.**
 
-Across 92 test days:
+Across 92 research-model test days:
 
 - average Top-10 overlap: **4.04 stations**
 - average Top-10 hit rate: **40.4%**
@@ -146,6 +146,8 @@ Across 92 test days:
 - random Top-10 expected hit rate: **1.7%**
 
 The operational objective is ranking useful stations, not predicting an exact future inventory level.
+
+To measure the **production-feasible model's** Top-10 ranking against the **frozen historical-profile ranking baseline**, run `python -m src.forecasting.production_model` followed by `python -m src.forecasting.evaluate_production_ranking` with the real historical feature data. No verified production-model ranking number is reported here yet.
 
 ## Live context
 
