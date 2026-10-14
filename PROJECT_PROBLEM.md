@@ -136,18 +136,19 @@ Production-feasible test results:
 
 ## Ranking validation
 
-The **offline research-model** station watchlist (with yesterday/last-week demand lags) is compared with actual cumulative trip net outflow during the unseen test period. **These numbers do not measure the production-feasible model's ranking accuracy.**
+For each of **92 out-of-time test days**, predicted maximum cumulative trip net depletion determines the daily Top-10 stations, which are compared with the actual Top-10 by customer-trip net depletion.
 
-Across 92 research-model test days:
+| Ranking method | Mean Top-10 hit rate | Mean overlap/day | Median hit rate |
+|---|---:|---:|---:|
+| **Production-feasible LightGBM** | **40.2%** | **4.02** | 40.0% |
+| Frozen historical demand profile | 39.0% | 3.90 | 40.0% |
+| Offline lag-feature research model | 40.4% | 4.04 | 40.0% |
 
-- average Top-10 overlap: **4.04 stations**
-- average Top-10 hit rate: **40.4%**
-- median Top-10 hit rate: **40.0%**
-- random Top-10 expected hit rate: **1.7%**
+Random expected Top-10 hit rate: **1.7%**. The production-model ranking was **1.2 percentage points** higher than the frozen-profile ranking in this test; statistical significance has not been established. The research model uses lagged trip features unavailable in a reliable next-day workflow and is not the deployed feature set.
 
-The operational objective is ranking useful stations, not predicting an exact future inventory level.
+The operational objective is ranking useful stations, not predicting an exact future inventory level. The historical ranking test uses observed weather, which does not capture live weather-forecast error.
 
-To measure the **production-feasible model's** Top-10 ranking against the **frozen historical-profile ranking baseline**, run `python -m src.forecasting.production_model` followed by `python -m src.forecasting.evaluate_production_ranking` with the real historical feature data. No verified production-model ranking number is reported here yet.
+To reproduce the production comparison using the historical feature data, run `python -m src.forecasting.production_model` followed by `python -m src.forecasting.evaluate_production_ranking`. The reported production and baseline results come from the October 14, 2026 run; generated data and per-day outputs are not committed.
 
 ## Live context
 
