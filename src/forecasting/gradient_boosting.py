@@ -146,8 +146,7 @@ def run_model(target):
     model.fit(
         X_train,
         y_train,
-        eval_X=X_validation,
-        eval_y=y_validation,
+        eval_set=[(X_validation, y_validation)],
         eval_metric="mae",
         callbacks=[
             early_stopping(30),
