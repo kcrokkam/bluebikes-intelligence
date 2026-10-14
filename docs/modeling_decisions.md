@@ -129,7 +129,9 @@ The ranking question is more useful:
 
 > If operations can focus on 10 stations, how many of the stations that actually experience the strongest depletion did the model surface?
 
-Across 92 unseen test days, the predicted Top-10 contained 4.04 of the actual Top-10 stations per day on average.
+Across 92 unseen test days, the **offline research model** (with previous-day and previous-week demand lags) was reported to identify 4.04 of the actual Top-10 stations per day on average (40.4% hit rate). These rankings come from the predictions saved by `src/forecasting/gradient_boosting.py` and evaluated by `build_watchlist.py`, `rank_stations.py`, and `evaluate_watchlist.py`.
+
+The **production-feasible model** in `production_model.py` is separately evaluated on forecast MAE and WAPE; its Top-10 ranking performance has **not been established** by this evaluation. The research-model ranking figure should not be presented as a production-model result.
 
 ## Why isn't predicted depletion a stockout prediction?
 

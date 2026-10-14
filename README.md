@@ -19,14 +19,16 @@ The production-feasible model uses only features available before the forecast d
 | Frozen historical profile baseline | 0.860 | 70.0% | 0.859 | 70.1% |
 | LightGBM production model | **0.828** | **67.4%** | **0.824** | **67.2%** |
 
-Across **92 unseen test days**, the predicted daily Top-10 watchlist captured:
+The table above reports forecast accuracy for the **production-feasible model** (calendar, weather, and frozen historical demand profiles).
+
+Separately, across **92 unseen test days**, the **offline research model with previous-day and previous-week demand lags** produced this Top-10 watchlist evaluation:
 
 - **4.04 actual Top-10 depletion stations per day on average**
 - **40.4% average Top-10 hit rate**
 - **40.0% median Top-10 hit rate**
 - **1.7% random expected Top-10 hit rate**
 
-The ranking metric evaluates the system the way an operations team would use it: as a prioritized list, not just a forecast table.
+The Top-10 figures above belong to the **research model**, not the production-feasible model. The production model's Top-10 ranking performance has **not been separately evaluated** in the repository. The ranking metric evaluates a prioritized list rather than just a forecast table.
 
 ## Example Output
 
@@ -137,7 +139,7 @@ Primary forecast metrics:
 - **MAE** — average absolute trip-count error per station-hour
 - **WAPE** — total absolute error relative to total actual demand
 
-Operational evaluation converts hourly forecasts into cumulative daily net depletion and compares the predicted Top-10 stations with the actual Top-10 stations on each unseen test day.
+Operational evaluation converts hourly forecasts into cumulative daily net depletion and compares the predicted Top-10 stations with the actual Top-10 stations on each unseen test day. The reported Top-10 result is calculated from **research-model predictions with lagged demand features**, not from `production_model.py`.
 
 ## Run locally
 
@@ -157,11 +159,22 @@ python -m src.forecasting.build_features
 python -m src.forecasting.build_demand_profile
 ```
 
-Evaluate the production-feasible model:
+Evaluate the production-feasible model's **forecast MAE and WAPE**:
 
 ```bash
 python -m src.forecasting.production_model
 ```
+
+Separately, reproduce the **offline research-model Top-10 ranking evaluation** (requires the full historical feature dataset):
+
+```bash
+python -m src.forecasting.gradient_boosting
+python -m src.forecasting.build_watchlist
+python -m src.forecasting.rank_stations
+python -m src.forecasting.evaluate_watchlist
+```
+
+These commands generate and evaluate rankings from research-model test predictions. They do **not** measure the production model's ranking accuracy.
 
 Generate tomorrow's forecast and watchlist:
 

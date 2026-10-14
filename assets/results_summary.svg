@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="360" viewBox="0 0 1100 360" role="img" aria-labelledby="title desc">
   <title id="title">Bluebikes Intelligence results at a glance</title>
-  <desc id="desc">Four summary metrics: 13.26 million station-hour rows, 92 unseen test days, 67.4 and 67.2 percent WAPE for departures and arrivals, and 40.4 percent Top-10 watchlist hit rate versus 1.7 percent random expectation.</desc>
+  <desc id="desc">Four summary metrics: 13.26 million station-hour rows, 92 unseen test days, 67.4 and 67.2 percent WAPE for departures and arrivals, and 40.4 percent Top-10 watchlist hit rate from the offline lag-feature research model versus 1.7 percent random expectation; production-model ranking accuracy is not reported.</desc>
   <rect width="1100" height="360" rx="24" fill="#ffffff"/>
   <text x="55" y="58" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#111827">Results at a glance</text>
   <text x="55" y="86" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#6b7280">Next-day station demand forecasting and operational prioritization</text>
@@ -33,8 +33,8 @@
     <rect width="230" height="165" rx="18" fill="#f3f4f6"/>
     <text x="22" y="45" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#111827">40.4%</text>
     <text x="22" y="76" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="600" fill="#374151">Top-10 hit rate</text>
-    <text x="22" y="108" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#6b7280">4.04 actual Top-10 stations/day</text>
-    <text x="22" y="132" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#6b7280">random expectation: 1.7%</text>
+    <text x="22" y="108" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#6b7280">offline research model</text>
+    <text x="22" y="132" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#6b7280">with lagged demand features</text>
   </g>
 
   <line x1="55" y1="320" x2="1045" y2="320" stroke="#e5e7eb"/>
