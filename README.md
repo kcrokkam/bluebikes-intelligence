@@ -165,6 +165,14 @@ Evaluate the production-feasible model's **forecast MAE and WAPE**:
 python -m src.forecasting.production_model
 ```
 
+Compare the production-feasible model's **Top-10 ranking** with the frozen historical-profile **ranking** baseline on the same out-of-time test days:
+
+```bash
+python -m src.forecasting.evaluate_production_ranking
+```
+
+The production-model command writes `production_test_departures_predictions.csv` and `production_test_arrivals_predictions.csv`; the evaluator writes per-day scores to `production_ranking_daily_results.csv` under `data/processed/`. No production ranking result is reported in this README until it is rerun and verified on the historical data. This evaluation does not overwrite the research-model prediction files.
+
 Separately, reproduce the **offline research-model Top-10 ranking evaluation** (requires the full historical feature dataset):
 
 ```bash
